@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: {{ .Values.rabbitmq.metadata.namespace }}
+  name: {{ include "rabbitmq.fullname" . | kebabcase }}
+  labels:
+    {{- include "rabbitmq.labels" . |   nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "rabbitmq.selectorLabels" . |   nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "rabbitmq.selectorLabels" .  | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "rabbitmq.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+        - name: host-time
+          hostPath:
+            path: /etc/localtime
+            type: ''
+        - name: {{ kebabcase .Values.rabbitmq.fullnameOverride }}
+          configMap:
+            name: {{ kebabcase .Values.rabbitmq.fullnameOverride }}
+            defaultMode: 420
+        {{- if .Values.rabbitmq.persistence.enabled }}
+        - name: {{ kebabcase .Values.rabbitmq.fullnameOverride }}-data
+          persistentVolumeClaim:
+            claimName: {{ .Values.rabbitmq.fullnameOverride }}
+        {{- end }}
+      containers:
+        - name: {{ kebabcase .Values.rabbitmq.fullnameOverride }}
+          volumeMounts:
+            - name: host-time
+              readOnly: true
+              mountPath: /etc/localtime
+            - name: {{ kebabcase .Values.rabbitmq.fullnameOverride }}
+              readOnly: true
+              mountPath: /etc/rabbitmq/conf.d/10-defaults.conf
+              subPath: 10-defaults.conf
+            {{- if .Values.rabbitmq.persistence.enabled }}
+            - name: {{ kebabcase .Values.rabbitmq.fullnameOverride }}-data
+              mountPath: {{ .Values.rabbitmq.persistence.path }}
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.rabbitmq.image.repository }}:{{ .Values.rabbitmq.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.rabbitmq.image.pullPolicy }}
+          ports:
+            - name: amqp-tcp
+              containerPort: {{ .Values.rabbitmq.service.targetPort }}
+              protocol: TCP
+            - name: tls-amqp-tcp
+              containerPort: {{ .Values.rabbitmq.service.tlsTargetPort }}
+              protocol: TCP
+            - name: manager-http
+              containerPort: {{ .Values.rabbitmq.service.targetManagerPort }}
+              protocol: TCP
+            - name: tls-man-http
+              containerPort: {{ .Values.rabbitmq.service.tlsManagerTargetPort }}
+              protocol: TCP
+          env:
+            {{- if .Values.rabbitmq.defaultUser }}
+            - name: RABBITMQ_DEFAULT_USER
+              value: {{ .Values.rabbitmq.defaultUser }}
+            {{- end }}
+            {{- if .Values.rabbitmq.defaultPass }}
+            - name: RABBITMQ_DEFAULT_PASS
+              value: {{ .Values.rabbitmq.defaultPass }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.rabbitmq.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

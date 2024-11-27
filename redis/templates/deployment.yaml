@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: {{ .Values.redis.metadata.namespace }}
+  name: {{ include "redis.fullname" . | kebabcase }}
+  labels:
+    {{- include "redis.labels" . |   nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "redis.selectorLabels" . |   nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "redis.selectorLabels" .  | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "redis.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+        - name: host-time
+          hostPath:
+            path: /etc/localtime
+            type: ''
+        - name: {{ kebabcase .Values.redis.fullnameOverride }}
+          configMap:
+            name: {{ kebabcase .Values.redis.fullnameOverride }}
+            defaultMode: 420
+        {{- if .Values.redis.persistence.enabled }}
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: {{ .Values.redis.fullnameOverride }}
+        {{- end }}
+      containers:
+        - name: {{ kebabcase .Values.redis.fullnameOverride }}
+          volumeMounts:
+            - name: host-time
+              readOnly: true
+              mountPath: /etc/localtime
+            - name: {{ kebabcase .Values.redis.fullnameOverride }}
+              readOnly: true
+              mountPath: /redis.conf
+              subPath: redis.conf
+            {{- if .Values.redis.persistence.enabled }}
+            - name: redis-data
+              mountPath: {{ .Values.redis.persistence.path }}
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          command: ["docker-entrypoint.sh", "/redis.conf"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.redis.service.targetport }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

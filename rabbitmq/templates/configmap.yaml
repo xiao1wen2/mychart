@@ -1,0 +1,10 @@
+{{- if  .Values.rabbitmq.defaultOverridesConfigmap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ kebabcase .Values.rabbitmq.fullnameOverride }}
+  namespace: {{ .Values.rabbitmq.metadata.namespace }}
+data:
+  {{ .Values.rabbitmq.defaultOverridesConfigmap }}: |-
+    {{- $.Files.Get "common/rabbitmq/10-defaults.conf" | nindent 4 }}
+{{- end }}

@@ -1,0 +1,16 @@
+{{- if  .Values.rabbitmq.persistence.enabled }}
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ .Values.rabbitmq.fullnameOverride }}
+  namespace: {{ .Values.rabbitmq.metadata.namespace }}
+spec:
+  accessModes:
+  {{- range .Values.rabbitmq.persistence.accessModes }}
+    - {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.rabbitmq.persistence.size }}
+  storageClassName: {{ .Values.rabbitmq.persistence.storageClass }}
+{{- end }}

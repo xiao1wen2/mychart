@@ -1,0 +1,16 @@
+{{- if  .Values.redis.persistence.enabled }}
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ .Values.redis.fullnameOverride }}
+  namespace: {{ .Values.redis.metadata.namespace }}
+spec:
+  accessModes:
+  {{- range .Values.redis.persistence.accessModes }}
+    - {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.redis.persistence.size }}
+  storageClassName: {{ .Values.redis.persistence.storageClass }}
+{{- end }}

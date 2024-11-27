@@ -1,0 +1,10 @@
+{{- if  .Values.redis.defaultOverridesConfigmap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ kebabcase .Values.redis.fullnameOverride }}
+  namespace: {{ .Values.redis.metadata.namespace }}
+data:
+  {{ .Values.redis.defaultOverridesConfigmap }}: |-
+    {{- $.Files.Get "common/redis/redis.conf" | nindent 4 }}
+{{- end }}

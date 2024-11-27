@@ -1,0 +1,7 @@
+apiVersion: v2
+name: redis
+description: 嘉和美康融合计算平台缓存数据库redis v6.2.14 安装程序
+type: application
+version: 6.2.14
+icon: icon/logo.jpg
+appVersion: "1.0.0"

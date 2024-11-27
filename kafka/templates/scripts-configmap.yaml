@@ -1,0 +1,91 @@
+{{- $releaseNamespace := include "common.names.namespace" . }}
+{{- $fullname := include "common.names.fullname" . }}
+{{- $clusterDomain := .Values.clusterDomain }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-scripts" $fullname }}
+  namespace: {{ $releaseNamespace  | quote }}
+data:
+  {{- if .Values.externalAccess.autoDiscovery.enabled }}
+  auto-discovery.sh: |-
+    #!/bin/bash
+    SVC_NAME="${MY_POD_NAME}-external"
+    AUTODISCOVERY_SERVICE_TYPE="${AUTODISCOVERY_SERVICE_TYPE:-}"
+    # Auxiliary functions
+    retry_while() {
+        local -r cmd="${1:?cmd is missing}"
+        local -r retries="${2:-12}"
+        local -r sleep_time="${3:-5}"
+        local return_value=1
+
+        read -r -a command <<< "$cmd"
+        for ((i = 1 ; i <= retries ; i+=1 )); do
+            "${command[@]}" && return_value=0 && break
+            sleep "$sleep_time"
+        done
+        return $return_value
+    }
+    k8s_svc_lb_ip() {
+        local namespace=${1:?namespace is missing}
+        local service=${2:?service is missing}
+        local service_ip=$(kubectl get svc "$service" -n "$namespace" -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+        local service_hostname=$(kubectl get svc "$service" -n "$namespace" -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+
+        if [[ -n ${service_ip} ]]; then
+            echo "${service_ip}"
+        else
+            echo "${service_hostname}"
+        fi
+    }
+    k8s_svc_lb_ip_ready() {
+        local namespace=${1:?namespace is missing}
+        local service=${2:?service is missing}
+        [[ -n "$(k8s_svc_lb_ip "$namespace" "$service")" ]]
+    }
+    k8s_svc_node_port() {
+        local namespace=${1:?namespace is missing}
+        local service=${2:?service is missing}
+        local index=${3:-0}
+        local node_port="$(kubectl get svc "$service" -n "$namespace" -o jsonpath="{.spec.ports[$index].nodePort}")"
+        echo "$node_port"
+    }
+
+    if [[ "$AUTODISCOVERY_SERVICE_TYPE" = "LoadBalancer" ]]; then
+      # Wait until LoadBalancer IP is ready
+      retry_while "k8s_svc_lb_ip_ready {{ $releaseNamespace }} $SVC_NAME" || exit 1
+      # Obtain LoadBalancer external IP
+      k8s_svc_lb_ip "{{ $releaseNamespace }}" "$SVC_NAME" | tee "/shared/external-host.txt"
+    elif [[ "$AUTODISCOVERY_SERVICE_TYPE" = "NodePort" ]]; then
+      k8s_svc_node_port "{{ $releaseNamespace }}" "$SVC_NAME" | tee "/shared/external-port.txt"
+    else
+      echo "Unsupported autodiscovery service type: '$AUTODISCOVERY_SERVICE_TYPE'"
+      exit 1
+    fi
+  {{- end }}
+  kafka-init.sh: |-
+    #!/bin/sh
+    env_set() { 
+      KAFKA_CFG_NODE_ID=$(echo "$MY_POD_NAME" | rev | cut -d "-" -f 1)
+      cp /serverconf/server.properties /conf
+      chmod +w /conf/server.properties
+      echo ""  >> /conf/server.properties
+      echo node.id=$KAFKA_CFG_NODE_ID >> /conf/server.properties
+      echo num.partitions=$KAFKA_CFG_NUM_PARTITIONS >> /conf/server.properties
+      echo default.replication.factor=$KAFKA_CFG_DEFAULT_REPLICATION_FACTOR >> /conf/server.properties
+      echo offsets.topic.replication.factor=$KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR >> /conf/server.properties
+      echo group.initial.rebalance.delay.ms=$KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS >> /conf/server.properties
+      echo log.retention.hours=$KAFKA_CFG_LOG_RETENTION_HOURS >> /conf/server.properties
+      echo message.max.bytes=$KAFKA_CFG_MESSAGE_MAX_BYTES >> /conf/server.properties
+      echo transaction.state.log.replication.factor=$KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR >> /conf/server.properties
+      echo transaction.state.log.min.isr=$KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR >> /conf/server.properties
+      echo controller.listener.names=$KAFKA_CFG_CONTROLLER_LISTENER_NAMES >> /conf/server.properties
+      echo process.roles=$KAFKA_CFG_PROCESS_ROLES >> /conf/server.properties
+      echo listeners=$KAFKA_CFG_LISTENERS >> /conf/server.properties
+      echo listener.security.protocol.map=$KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP >> /conf/server.properties
+      echo controller.quorum.voters=$KAFKA_CFG_CONTROLLER_QUORUM_VOTERS >> /conf/server.properties
+      echo "node.id is. node.id=$KAFKA_CFG_NODE_ID ~~~~~~~~~~~~~~~~~"
+      cat /conf/server.properties
+    }
+
+    env_set
